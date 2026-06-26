@@ -52,7 +52,7 @@ async def send_request(encrypted_uid, token, url):
         'Expect': "100-continue",
         'X-Unity-Version': "2018.4.11f1",
         'X-GA': "v1 1",
-        'ReleaseVersion': "OB53"
+        'ReleaseVersion': "OB54"
     }
     async with aiohttp.ClientSession() as session:
         async with session.post(url, data=edata, headers=headers) as response:
@@ -104,7 +104,7 @@ def make_request(encrypt, server_name, token):
         'Expect': "100-continue",
         'X-Unity-Version': "2018.4.11f1",
         'X-GA': "v1 1",
-        'ReleaseVersion': "OB53"
+        'ReleaseVersion': "OB54"
     }
     response = requests.post(url, data=edata, headers=headers, verify=False)
     hex = response.content.hex()
@@ -117,7 +117,7 @@ def token_used(server_name):
     if server_name == "IND":
         response = requests.get("https://free-like-token.onrender.com/token/ind")
     elif server_name in {"BR", "US", "SAC", "NA"}:
-        response = requests.get("https://token.freefireinfo.xyz/token/usa")
+        response = requests.get("https://token.freefireinfo.in/token/usa")
     else:
         response = requests.get("https://sea-free-like-token.onrender.com/token/sea")
     
@@ -147,7 +147,7 @@ def handle_request(uid, server_nam, key):
             return jsonify({"error": "UID, Region and Key are required"}), 400
 
         def process_request():
-            response = requests.get(f"https://regionaljwt.freefireinfo.xyz/token?region={server_nam}")
+            response = requests.get(f"https://regionaljwt.freefireinfo.in/token?region={server_nam}")
             token = response.text
     
             encrypt = enc(uid)

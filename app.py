@@ -8,6 +8,7 @@ import aiohttp
 from google.protobuf.json_format import MessageToDict
 import requests
 import json
+import time
 import like_pb2
 import like_count_pb2
 from google.protobuf.message import DecodeError
@@ -44,17 +45,20 @@ async def send_request(encrypted_uid, token, url):
     edata = bytes.fromhex(encrypted_uid)
     token = token['token']
     headers = {
-        'User-Agent': "Dalvik/2.1.0 (Linux; U; Android 9; ASUS_Z01QD Build/PI)",
+        'Accept': "*/*",
+        'User-Agent': "UnityPlayer/2022.3.47f1 (UnityWebRequest/1.0, libcurl/8.5.0-DEV)",
         'Connection': "Keep-Alive",
-        'Accept-Encoding': "gzip",
+        'Accept-Encoding': "deflate, gzip",
         'Authorization': f"Bearer {token}",
         'Content-Type': "application/x-www-form-urlencoded",
         'Expect': "100-continue",
-        'X-Unity-Version': "2018.4.11f1",
+        'Host': url.replace("https://", "").replace("http://", "").split("/")[0],
+        'X-Unity-Version': "2022.3.47f1",
         'X-GA': "v1 1",
+        'X-GA-SV': str(int(time.time())),
         'ReleaseVersion': "OB55"
     }
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
         async with session.post(url, data=edata, headers=headers) as response:
             if response.status != 200:
                 return None
@@ -91,22 +95,26 @@ def make_request(encrypt, server_name, token):
     elif server_name in {"BR", "US", "SAC", "NA"}:
         url = "https://client.us.freefiremobile.com/GetPlayerPersonalShow"
     else:
-        url = "https://clientbp.ggpolarbear.com/GetPlayerPersonalShow"
+        url = "https://clientbp.ppmainecoonghj.com/GetPlayerPersonalShow"
 
     edata = bytes.fromhex(encrypt)
 
     headers = {
-        'User-Agent': "Dalvik/2.1.0 (Linux; U; Android 9; ASUS_Z01QD Build/PI)",
+        'Accept': "*/*",
+        'User-Agent': "UnityPlayer/2022.3.47f1 (UnityWebRequest/1.0, libcurl/8.5.0-DEV)",
         'Connection': "Keep-Alive",
-        'Accept-Encoding': "gzip",
+        'Accept-Encoding': "deflate, gzip",
         'Authorization': f"Bearer {token}",
         'Content-Type': "application/x-www-form-urlencoded",
         'Expect': "100-continue",
-        'X-Unity-Version': "2018.4.11f1",
+        'Host': url.replace("https://", "").replace("http://", "").split("/")[0],
+        'X-Unity-Version': "2022.3.47f1",
         'X-GA': "v1 1",
+        'X-GA-SV': str(int(time.time())),
         'ReleaseVersion': "OB55"
     }
-    response = requests.post(url, data=edata, headers=headers, verify=False)
+    response = requests.post(url, data=edata, headers=headers, verify=False, timeout=10)
+    response.raise_for_status()
     hex = response.content.hex()
     binary = bytes.fromhex(hex)
     decode = decode_protobuf(binary)
@@ -115,14 +123,29 @@ def make_request(encrypt, server_name, token):
 def token_used(server_name):
     # Get tokens from local server
     if server_name == "IND":
-        response = requests.get("https://free-like-token.onrender.com/token/ind")
+        response = requests.get("https://free-like-token.onrender.com/token/ind", timeout=10)
     elif server_name in {"BR", "US", "SAC", "NA"}:
-        response = requests.get("https://token.freefireinfo.in/token/usa")
+        response = requests.get("https://token.freefireinfo.in/token/usa", timeout=10)
     else:
-        response = requests.get("https://sea-free-like-token.onrender.com/token/sea")
+        response = requests.get("https://sea-free-like-token.onrender.com/token/sea", timeout=10)
     
+    response.raise_for_status()
     tokens = response.json()
-    token_list = [{"token": token} for token in tokens]
+
+    token_list = []
+    for token_data in tokens:
+        if isinstance(token_data, dict):
+            token_value = (
+                token_data.get("token")
+                or token_data.get("jwt")
+                or token_data.get("access_token")
+            )
+        else:
+            token_value = token_data
+
+        if token_value:
+            token_list.append({"token": str(token_value).strip()})
+
     return token_list
 
 def decode_protobuf(binary):
@@ -147,8 +170,37 @@ def handle_request(uid, server_nam, key):
             return jsonify({"error": "UID, Region and Key are required"}), 400
 
         def process_request():
-            response = requests.get(f"https://regionaljwt.freefireinfo.in/token?region={server_nam}")
-            token = response.text
+            response = requests.get(
+                f"https://regionaljwt.freefireinfo.in/token?region={server_nam}",
+                timeout=10
+            )
+            response.raise_for_status()
+
+            raw_token_response = response.text.strip()
+            token = raw_token_response
+
+            # Support both plain-text JWT and the new JSON token response.
+            try:
+                token_data = response.json()
+                if isinstance(token_data, dict):
+                    token = (
+                        token_data.get("token")
+                        or token_data.get("jwt")
+                        or token_data.get("access_token")
+                        or raw_token_response
+                    )
+            except (ValueError, requests.exceptions.JSONDecodeError):
+                pass
+
+            token = str(token).strip()
+
+            if not token.startswith("eyJ"):
+                return jsonify({
+                    "error": "Invalid token response",
+                    "response": raw_token_response[:300]
+                }), 500
+
+            print(f"Token fetched for {server_nam}: {token[:25]}... (length={len(token)})")
     
             encrypt = enc(uid)
             server_name = server_nam.upper()
@@ -166,7 +218,7 @@ def handle_request(uid, server_nam, key):
             elif server_name in {"BR", "US", "SAC", "NA"}:
                 url = "https://client.us.freefiremobile.com/LikeProfile"
             else:
-                url = "https://clientbp.ggpolarbear.com/LikeProfile"
+                url = "https://clientbp.ppmainecoonghj.com/LikeProfile"
     
             asyncio.run(send_multiple_requests(uid, server_name, url))
     
